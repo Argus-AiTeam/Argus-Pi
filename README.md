@@ -42,6 +42,7 @@ cd Argus-Pi
 npm ci --ignore-scripts
 npm run hydrate:model-data
 npm run build:offline
+npm rebuild --workspace=@earendil-works/pi-coding-agent --ignore-scripts
 ./node_modules/.bin/argus-pi --help
 ```
 
