@@ -124,7 +124,25 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+	const profile = process.env.PI_HARNESS_PROFILE || "argus";
+	if (profile !== "stock" && profile !== "argus") {
+		throw new Error(`Unknown PI_HARNESS_PROFILE: ${profile}. Expected stock or argus.`);
+	}
+
+	let prompt =
+		profile === "argus"
+			? `You are a task assistant operating inside pi for an external orchestrator. Follow the assigned role, task scope, and acceptance criteria; do not assume every task is a coding task.
+
+Available tools:
+${toolsList}
+
+Guidelines:
+${guidelines}
+- Use only the tools available in this session. Do not claim execution or verification without observed evidence.
+- Preserve the requested decision and handoff format. Report blockers explicitly rather than inventing results.
+
+For tasks about pi itself, documentation is at ${readmePath}; additional docs are at ${docsPath}.`
+			: `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 ${toolsList}

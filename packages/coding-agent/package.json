@@ -1,12 +1,14 @@
 {
 	"name": "@earendil-works/pi-coding-agent",
 	"version": "0.85.1",
-	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
+	"private": true,
+	"description": "Argus-Pi: Pi-compatible inference and execution harness for Argus",
 	"type": "module",
 	"piConfig": {
 		"configDir": ".pi"
 	},
 	"bin": {
+		"argus-pi": "dist/bundle/cli.js",
 		"pi": "dist/bundle/cli.js"
 	},
 	"main": "./dist/index.js",
@@ -67,6 +69,7 @@
 		"semver": "7.8.5",
 		"typebox": "1.3.27",
 		"undici": "8.10.2",
+		"unpdf": "1.8.1",
 		"yaml": "2.9.0"
 	},
 	"overrides": {
@@ -98,7 +101,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/Argus-AiTeam/Argus-Pi.git",
 		"directory": "packages/coding-agent"
 	},
 	"engines": {

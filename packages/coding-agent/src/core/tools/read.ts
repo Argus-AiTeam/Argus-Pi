@@ -2,7 +2,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
+import { extname } from "path";
 import { type Static, Type } from "typebox";
+import { getResolvedPDFJS } from "unpdf";
+import { raceWithAbortSignal } from "../../utils/abort.ts";
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
@@ -61,6 +64,48 @@ function getNonVisionImageNote(model: Model<Api> | undefined): string | undefine
 	return "[Current model does not support images. The image will be omitted from this request.]";
 }
 
+async function readPdfText(buffer: Buffer, signal?: AbortSignal): Promise<string> {
+	const { getDocument } = await getResolvedPDFJS();
+	if (signal?.aborted) throw new Error("Operation aborted");
+	// Reject damaged content instead of returning partial evidence, and keep parser logs out of RPC stdout.
+	const task = getDocument({ data: new Uint8Array(buffer), stopAtErrors: true, verbosity: 0, useSystemFonts: true });
+	try {
+		const pdf = await raceWithAbortSignal(task.promise, signal);
+		if ((await raceWithAbortSignal(pdf.getPermissions(), signal)) !== null) {
+			throw new Error("Encrypted PDFs are not supported.");
+		}
+		const pages: string[] = [];
+		let hasText = false;
+		for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+			if (signal?.aborted) throw new Error("Operation aborted");
+			const page = await raceWithAbortSignal(pdf.getPage(pageNumber), signal);
+			const content = await raceWithAbortSignal(page.getTextContent(), signal);
+			const text = content.items
+				.map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : ""))
+				.join("")
+				.trim();
+			hasText ||= text.length > 0;
+			pages.push(
+				`[Page ${pageNumber} of ${pdf.numPages}]\n${text || "[No extractable text on this page; it may be blank or scanned. OCR and visual verification are not supported.]"}`,
+			);
+			page.cleanup();
+		}
+		if (!hasText) {
+			throw new Error("PDF has no extractable text. It may be blank or scanned; OCR is not supported.");
+		}
+		return pages.join("\n\n");
+	} catch (error) {
+		if (error instanceof Error && error.name === "PasswordException") {
+			throw new Error("Cannot read encrypted PDF: password-protected PDFs are not supported.", { cause: error });
+		}
+		throw new Error(`Cannot extract PDF text: ${error instanceof Error ? error.message : String(error)}`, {
+			cause: error,
+		});
+	} finally {
+		await task.destroy();
+	}
+}
+
 export function createReadToolDefinition(
 	cwd: string,
 	options?: ReadToolOptions,
@@ -70,7 +115,7 @@ export function createReadToolDefinition(
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
+		description: `Read the contents of a file. Supports text files, PDF text extraction, and images (jpg, png, gif, webp, bmp). Images are sent as attachments. PDFs return page-marked text, not visual verification of figures or layout; pages without text are marked explicitly, while encrypted or entirely textless PDFs produce errors. Text output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files, including lines of extracted PDF text. When you need the full file, continue with offset until complete.`,
 		promptSnippet: readToolSystemPromptContribution.snippet,
 		promptGuidelines: [...readToolSystemPromptContribution.guidelines],
 		parameters: readSchema,
@@ -124,9 +169,13 @@ export function createReadToolDefinition(
 									];
 								}
 							} else {
-								// Read text content.
 								const buffer = await ops.readFile(absolutePath);
-								const textContent = buffer.toString("utf-8");
+								if (aborted) return;
+								const isPdf =
+									buffer.subarray(0, 5).toString("ascii") === "%PDF-" ||
+									extname(absolutePath).toLowerCase() === ".pdf";
+								const textContent = isPdf ? await readPdfText(buffer, signal) : buffer.toString("utf-8");
+								if (aborted) return;
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
 								// Apply offset if specified. Convert from 1-indexed input to 0-indexed array access.
@@ -150,9 +199,10 @@ export function createReadToolDefinition(
 								const truncation = truncateHead(selectedContent);
 								let outputText: string;
 								if (truncation.firstLineExceedsLimit) {
-									// First line alone exceeds the byte limit. Point the model at a bash fallback.
 									const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
-									outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+									outputText = isPdf
+										? `[Extracted PDF line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit and cannot be displayed by read.]`
+										: `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
 									details = { truncation };
 								} else if (truncation.truncated) {
 									// Truncation occurred. Build an actionable continuation notice.
@@ -173,6 +223,9 @@ export function createReadToolDefinition(
 								} else {
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
+								}
+								if (isPdf) {
+									outputText = `[PDF text extraction only; not visual verification of images, figures, or layout. offset/limit count the extracted text lines, including page markers.]\n\n${outputText}`;
 								}
 								content = [{ type: "text", text: outputText }];
 							}

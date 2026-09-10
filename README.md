@@ -1,3 +1,81 @@
+# Argus-Pi
+
+**Argus AI Team's dedicated Pi-based inference and execution harness for Argus.**
+
+This is a maintained fork of [earendil-works/pi](https://github.com/earendil-works/pi),
+not a replacement for Argus's orchestration. We optimize the Pi layer: model
+requests, tool execution, context and session handling, reliability, and task
+handoffs. Argus keeps ownership of goals, role authority, review and durable
+mission state.
+
+## Current downstream behavior
+
+- The `argus` harness profile is the default: follow the assigned task and role
+  instead of assuming every invocation is a coding task.
+- Keep tool descriptions, Skills, project context, explicit system prompts and
+  decision formats intact. The profile does not grant permissions or add a sandbox.
+- Preserve the `pi` CLI, JSON/RPC events, `.pi` configuration and existing provider
+  authentication. `argus-pi` is an additional executable name for the same CLI.
+- Set `PI_HARNESS_PROFILE=stock` to restore the upstream default system prompt.
+- The existing `read` tool extracts page-marked PDF text, including in read-only
+  review sessions. It needs no shell permission or external PDF executable.
+  Textless pages are explicitly marked; entirely textless, encrypted or malformed
+  documents fail visibly. This is not OCR, figure inspection or layout validation.
+
+The initial experiment changed only the default task prompt; PDF reading is the
+first subsequent tool capability. The Agent loop is unchanged. Small local
+prompt-profile trials showed reduced input usage, but also exposed
+timeouts, a provider request error, and missing persisted analysis scripts.
+These are not claims of general performance superiority. Improvements must be
+measured on matched tasks with failures and incomplete deliverables retained.
+
+## Build and run from source
+
+Node.js 22.19+ and npm are required. This fork is currently a source preview:
+there is no separately published Argus-Pi npm package or binary release.
+Installing `@earendil-works/pi-coding-agent` from npm installs upstream Pi,
+not this fork.
+
+```bash
+git clone --branch argus https://github.com/Argus-AiTeam/Argus-Pi.git
+cd Argus-Pi
+npm ci --ignore-scripts
+npm run hydrate:model-data
+npm run build:offline
+./node_modules/.bin/argus-pi --help
+```
+
+For an existing Argus deployment configured to use the `pi` backend, place this
+checkout's `node_modules/.bin` first on that process's `PATH`. No Argus source
+change is required. Do not overwrite a working global Pi installation to try the
+fork. Both executable names retain Pi's existing configuration and authentication
+paths; use `PI_CODING_AGENT_DIR` when separate configuration is desired.
+
+Use source control to update this source installation, not upstream's npm release
+or `pi update --self`. The CLI package is marked private until a dedicated
+publication identity and release process are established.
+
+## Ongoing development
+
+The downstream default branch is `argus`; `main` initially retains the forked
+upstream history. Add `https://github.com/earendil-works/pi.git` as the `upstream`
+remote and merge reviewed upstream changes into `argus` in explicit updates.
+Do not force-reset the downstream branch to upstream.
+
+Prioritize reproduced request failures and incomplete handoffs, then measured
+context, tool-loop and startup overhead. Preserve role isolation and stopping
+semantics. Each change needs a focused regression check and, for performance
+claims, same-model/same-budget task comparisons including failure counts.
+Do not commit credentials, private task logs, or provider authorization data.
+
+CI also targets `argus`. Upstream contributor gates and release/catalog
+publication jobs are restricted to the upstream repository; this fork does not
+publish to upstream npm namespaces or infrastructure.
+
+## Upstream Pi
+
+The original packages, documentation and MIT attribution are retained below.
+
 <p align="center">
   <a href="https://pi.dev">
     <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
@@ -8,7 +86,8 @@
   <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
 </p>
 
-> New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
+> The contributor approval policy below belongs to upstream Pi. Argus-Pi
+> contributions target the `argus` branch; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 # Pi Agent Harness
 

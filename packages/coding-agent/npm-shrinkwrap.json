@@ -27,9 +27,11 @@
 				"semver": "7.8.5",
 				"typebox": "1.3.27",
 				"undici": "8.10.2",
+				"unpdf": "1.8.1",
 				"yaml": "2.9.0"
 			},
 			"bin": {
+				"argus-pi": "dist/bundle/cli.js",
 				"pi": "dist/bundle/cli.js"
 			},
 			"engines": {
@@ -1842,6 +1844,23 @@
 			"resolved": "https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz",
 			"integrity": "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==",
 			"license": "MIT"
+		},
+		"node_modules/unpdf": {
+			"version": "1.8.1",
+			"resolved": "https://registry.npmjs.org/unpdf/-/unpdf-1.8.1.tgz",
+			"integrity": "sha512-xkURhy2SoGpOIH0a1gLHNkASPIQYonadDJs2AQwPEfUakafeD9EA1WTWWsaR++gfTCXJpV27W7tU1nXuk82UKQ==",
+			"license": "MIT",
+			"peerDependencies": {
+				"@napi-rs/canvas": "^0.1.69 || ^1.0.0"
+			},
+			"peerDependenciesMeta": {
+				"@napi-rs/canvas": {
+					"optional": true
+				}
+			},
+			"engines": {
+				"node": ">=22"
+			}
 		},
 		"node_modules/web-streams-polyfill": {
 			"version": "3.3.3",

@@ -25,6 +25,7 @@ jobs:
   # Keep the public GitHub Release publication last. Binary assets are staged in
   # a draft release first; cleanup removes the draft if later publishing fails.
   build:
+    if: github.repository == 'earendil-works/pi'
     runs-on: ubuntu-latest
     permissions:
       contents: read

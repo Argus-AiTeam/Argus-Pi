@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
@@ -13,6 +13,86 @@ const testSkill: Skill = {
 };
 
 describe("buildSystemPrompt", () => {
+	beforeEach(() => vi.stubEnv("PI_HARNESS_PROFILE", "stock"));
+	afterEach(() => vi.unstubAllEnvs());
+
+	describe("Argus harness profile", () => {
+		test("defaults to the Argus profile without caller configuration", () => {
+			vi.stubEnv("PI_HARNESS_PROFILE", undefined);
+			const automatic = buildSystemPrompt({ cwd: "/workspace" });
+			vi.stubEnv("PI_HARNESS_PROFILE", "argus");
+			expect(buildSystemPrompt({ cwd: "/workspace" })).toBe(automatic);
+			expect(automatic).toContain("Follow the assigned role");
+			expect(automatic).not.toContain("expert coding assistant");
+		});
+
+		test("restores the upstream persona and documentation with the stock profile", () => {
+			const prompt = buildSystemPrompt({ cwd: "/workspace" });
+			expect(prompt).toContain("expert coding assistant");
+			expect(prompt).toContain("TUI components");
+		});
+
+		test("uses the assigned role without claiming unavailable execution tools", () => {
+			vi.stubEnv("PI_HARNESS_PROFILE", "argus");
+			const prompt = buildSystemPrompt({
+				cwd: "/workspace",
+				selectedTools: ["read"],
+				toolSnippets: { read: "Read file contents", write: "Write files" },
+			});
+			expect(prompt).toContain("Follow the assigned role");
+			expect(prompt).toContain("- read: Read file contents");
+			expect(prompt).not.toContain("- write:");
+			expect(prompt).not.toContain("executing commands, editing code");
+			expect(prompt).toContain("without observed evidence");
+		});
+
+		test("preserves context, skills, tool guidance, and handoff requirements", () => {
+			const options = {
+				cwd: "/workspace",
+				selectedTools: ["read"],
+				skills: [testSkill],
+				contextFiles: [{ path: "/workspace/AGENTS.md", content: "Do not publish." }],
+				promptGuidelines: ["Use read for files."],
+				appendSystemPrompt: "Return the requested decision fields.",
+			};
+			vi.stubEnv("PI_HARNESS_PROFILE", "stock");
+			const stock = buildSystemPrompt(options);
+			vi.stubEnv("PI_HARNESS_PROFILE", "argus");
+			const prompt = buildSystemPrompt(options);
+			for (const text of [
+				"Do not publish.",
+				"Use read for files.",
+				"Return the requested decision fields.",
+				"<name>test-skill</name>",
+				"Current working directory: /workspace",
+			]) {
+				expect(prompt).toContain(text);
+			}
+			expect(prompt.length).toBeLessThan(stock.length);
+			expect(prompt).not.toContain("TUI components");
+		});
+
+		test("keeps explicitly supplied system prompts authoritative", () => {
+			const options = { cwd: "/workspace", customPrompt: "An explicit role.", skills: [testSkill] };
+			vi.stubEnv("PI_HARNESS_PROFILE", "stock");
+			const stock = buildSystemPrompt(options);
+			vi.stubEnv("PI_HARNESS_PROFILE", "argus");
+			expect(buildSystemPrompt(options)).toBe(stock);
+		});
+
+		test("preserves a no-tools session without advertising tool capabilities", () => {
+			vi.stubEnv("PI_HARNESS_PROFILE", "argus");
+			const prompt = buildSystemPrompt({ cwd: "/workspace", selectedTools: [], skills: [testSkill] });
+			expect(prompt).toContain("Available tools:\n(none)");
+			expect(prompt).not.toContain("<available_skills>");
+		});
+
+		test("rejects misspelled profiles rather than silently selecting a default", () => {
+			vi.stubEnv("PI_HARNESS_PROFILE", "argu");
+			expect(() => buildSystemPrompt({ cwd: "/workspace" })).toThrow("Unknown PI_HARNESS_PROFILE");
+		});
+	});
+
 	describe("empty tools", () => {
 		test("shows (none) for empty tools list", () => {
 			const prompt = buildSystemPrompt({

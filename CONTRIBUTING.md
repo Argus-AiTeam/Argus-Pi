@@ -1,4 +1,15 @@
-# Contributing to pi
+# Contributing to Argus-Pi
+
+Open downstream issues and pull requests in
+[Argus-AiTeam/Argus-Pi](https://github.com/Argus-AiTeam/Argus-Pi), targeting the
+`argus` branch. Upstream's contributor approval gates do not run in this fork.
+Keep changes in the Pi layer, reproduce the problem, and include focused tests.
+Report quality and failure rates alongside any token or latency improvements.
+
+The engineering guidance below is retained from upstream. Its approval policy
+applies when contributing to `earendil-works/pi`, not to this downstream fork.
+
+## Upstream contribution guidance
 
 This guide exists to save both sides time.
 

@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   generate:
-    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    if: ${{ github.repository == 'earendil-works/pi' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) }}
     runs-on: ubuntu-latest
     env:
       SOURCE_REF: ${{ github.event.workflow_run.head_sha || inputs.source_ref || github.sha }}
@@ -71,7 +71,7 @@ jobs:
           retention-days: 14
 
   publish:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    if: ${{ github.repository == 'earendil-works/pi' && (github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish)) }}
     needs: generate
     runs-on: ubuntu-latest
     environment: pi-model-upload

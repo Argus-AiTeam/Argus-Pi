@@ -80,6 +80,7 @@ These variables are read by Pi itself:
 |----------|-------------|
 | `PI_CODING_AGENT_DIR` | Override the config directory; default is `~/.pi/agent` |
 | `PI_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
+| `PI_HARNESS_PROFILE` | `argus` (default in Argus-Pi) or `stock`: select a task/role-neutral or upstream coding system prompt, without changing tools, permissions, events, or sessions |
 | `PI_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
 | `PI_OFFLINE` | Disable startup network operations, including update checks, package updates, and install/update telemetry |
 | `PI_SKIP_VERSION_CHECK` | Disable the `pi.dev` latest-version request |
@@ -95,5 +96,16 @@ These variables are read by Pi itself:
 | `HTTP_PROXY`, `HTTPS_PROXY` | Proxy outbound HTTP requests |
 
 Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-provider configuration are listed in [Providers](providers.md#environment-variables-or-auth-file).
+
+### Argus harness profile
+
+Argus-Pi defaults to `PI_HARNESS_PROFILE=argus`; no caller configuration is needed.
+Argus continues using the existing Pi CLI interface; no Argus code change is
+needed. This profile replaces the default coding persona and extensive Pi
+authoring-documentation directions with task-role and evidence guidance.
+Tool descriptions, tool-specific guidelines, explicit system prompts, appended
+instructions, project context and Skills are preserved. It does not add tools
+or provide a sandbox. Set `PI_HARNESS_PROFILE=stock` to restore the upstream
+system prompt, especially for developing Pi itself.
 
 `PI_SERVER_DIR` and `PI_SERVER_ID` apply only to the source-only [experimental remote harness](development.md#experimental-remote-harness), not distributed builds.
