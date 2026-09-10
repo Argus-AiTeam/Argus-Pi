@@ -23,8 +23,13 @@ mission state.
   and local Bash pipeline behavior.
 - The existing `read` tool extracts page-marked PDF text, including in read-only
   review sessions. It needs no shell permission or external PDF executable.
+  Use `pages: "3"` or `pages: "3-5"` to extract just the relevant pages of a long
+  paper; `offset` and `limit` then count lines within that selection. Continuation
+  notices retain the page range. Omitting `pages` preserves whole-document reading.
   Textless pages are explicitly marked; entirely textless, encrypted or malformed
   documents fail visibly. This is not OCR, figure inspection or layout validation.
+  Selection skips text extraction outside the range, not file loading or document
+  parsing, and does not validate unselected page content. No text cache is used.
 
 The initial experiment changed only the default task prompt; PDF reading is the
 first subsequent tool capability; local pipeline status handling now also

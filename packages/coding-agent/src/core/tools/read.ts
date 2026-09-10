@@ -18,6 +18,7 @@ const readSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
 	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+	pages: Type.Optional(Type.String({ description: "PDF pages to extract (1-indexed), e.g. '3' or '3-5'. PDF only." })),
 });
 
 export const readToolSystemPromptContribution = {
@@ -64,7 +65,11 @@ function getNonVisionImageNote(model: Model<Api> | undefined): string | undefine
 	return "[Current model does not support images. The image will be omitted from this request.]";
 }
 
-async function readPdfText(buffer: Buffer, signal?: AbortSignal): Promise<string> {
+async function readPdfText(buffer: Buffer, signal?: AbortSignal, pageRange?: string): Promise<string> {
+	const range = pageRange?.match(/^([1-9]\d*)(?:-([1-9]\d*))?$/);
+	if (pageRange !== undefined && !range) {
+		throw new Error("Invalid PDF pages: use a page number or inclusive range, such as '3' or '3-5'.");
+	}
 	const { getDocument } = await getResolvedPDFJS();
 	if (signal?.aborted) throw new Error("Operation aborted");
 	// Reject damaged content instead of returning partial evidence, and keep parser logs out of RPC stdout.
@@ -74,9 +79,14 @@ async function readPdfText(buffer: Buffer, signal?: AbortSignal): Promise<string
 		if ((await raceWithAbortSignal(pdf.getPermissions(), signal)) !== null) {
 			throw new Error("Encrypted PDFs are not supported.");
 		}
+		const firstPage = range ? Number(range[1]) : 1;
+		const lastPage = range ? Number(range[2] ?? range[1]) : pdf.numPages;
+		if (firstPage > lastPage || lastPage > pdf.numPages) {
+			throw new Error(`Requested PDF pages '${pageRange}' are outside the valid range 1-${pdf.numPages}.`);
+		}
 		const pages: string[] = [];
 		let hasText = false;
-		for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+		for (let pageNumber = firstPage; pageNumber <= lastPage; pageNumber++) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 			const page = await raceWithAbortSignal(pdf.getPage(pageNumber), signal);
 			const content = await raceWithAbortSignal(page.getTextContent(), signal);
@@ -91,7 +101,11 @@ async function readPdfText(buffer: Buffer, signal?: AbortSignal): Promise<string
 			page.cleanup();
 		}
 		if (!hasText) {
-			throw new Error("PDF has no extractable text. It may be blank or scanned; OCR is not supported.");
+			throw new Error(
+				pageRange === undefined
+					? "PDF has no extractable text. It may be blank or scanned; OCR is not supported."
+					: `Selected PDF pages '${pageRange}' have no extractable text. They may be blank or scanned; OCR is not supported.`,
+			);
 		}
 		return pages.join("\n\n");
 	} catch (error) {
@@ -115,14 +129,14 @@ export function createReadToolDefinition(
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files, PDF text extraction, and images (jpg, png, gif, webp, bmp). Images are sent as attachments. PDFs return page-marked text, not visual verification of figures or layout; pages without text are marked explicitly, while encrypted or entirely textless PDFs produce errors. Text output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files, including lines of extracted PDF text. When you need the full file, continue with offset until complete.`,
+		description: `Read the contents of a file. Supports text files, PDF text extraction, and images (jpg, png, gif, webp, bmp). Images are sent as attachments. PDFs return page-marked text, not visual verification of figures or layout; pages without text are marked explicitly, while encrypted or entirely textless selections produce errors. For PDFs, use pages (e.g. "3-5") to extract only the requested pages. Text output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for text lines, counted within the selected PDF pages when pages is supplied. To continue, keep the same pages selection and advance offset.`,
 		promptSnippet: readToolSystemPromptContribution.snippet,
 		promptGuidelines: [...readToolSystemPromptContribution.guidelines],
 		parameters: readSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		async execute(
 			_toolCallId,
-			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
+			{ path, offset, limit, pages }: ReadToolInput,
 			signal?: AbortSignal,
 			_onUpdate?,
 			ctx?: ExtensionContext,
@@ -152,6 +166,8 @@ export function createReadToolDefinition(
 							let details: ReadToolDetails | undefined;
 							const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
 							if (mimeType) {
+								if (pages !== undefined)
+									throw new Error("The pages parameter is only supported for PDF files.");
 								// Read image as binary.
 								const buffer = await ops.readFile(absolutePath);
 								const processed = await processImage(buffer, mimeType, { autoResizeImages });
@@ -174,7 +190,10 @@ export function createReadToolDefinition(
 								const isPdf =
 									buffer.subarray(0, 5).toString("ascii") === "%PDF-" ||
 									extname(absolutePath).toLowerCase() === ".pdf";
-								const textContent = isPdf ? await readPdfText(buffer, signal) : buffer.toString("utf-8");
+								if (pages !== undefined && !isPdf) {
+									throw new Error("The pages parameter is only supported for PDF files.");
+								}
+								const textContent = isPdf ? await readPdfText(buffer, signal, pages) : buffer.toString("utf-8");
 								if (aborted) return;
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
@@ -197,6 +216,7 @@ export function createReadToolDefinition(
 								}
 								// Apply truncation, respecting both line and byte limits.
 								const truncation = truncateHead(selectedContent);
+								const pageSelection = pages === undefined ? "" : `, pages="${pages}"`;
 								let outputText: string;
 								if (truncation.firstLineExceedsLimit) {
 									const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
@@ -210,22 +230,23 @@ export function createReadToolDefinition(
 									const nextOffset = endLineDisplay + 1;
 									outputText = truncation.content;
 									if (truncation.truncatedBy === "lines") {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset}${pageSelection} to continue.]`;
 									} else {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset}${pageSelection} to continue.]`;
 									}
 									details = { truncation };
 								} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
 									// User-specified limit stopped early, but the file still has more content.
 									const remaining = allLines.length - (startLine + userLimitedLines);
 									const nextOffset = startLine + userLimitedLines + 1;
-									outputText = `${truncation.content}\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+									outputText = `${truncation.content}\n\n[${remaining} more lines in file. Use offset=${nextOffset}${pageSelection} to continue.]`;
 								} else {
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
 								}
 								if (isPdf) {
-									outputText = `[PDF text extraction only; not visual verification of images, figures, or layout. offset/limit count the extracted text lines, including page markers.]\n\n${outputText}`;
+									const selection = pages === undefined ? "" : ` Selected PDF pages: ${pages}.`;
+									outputText = `[PDF text extraction only; not visual verification of images, figures, or layout.${selection} offset/limit count the extracted text lines, including page markers.]\n\n${outputText}`;
 								}
 								content = [{ type: "text", text: outputText }];
 							}

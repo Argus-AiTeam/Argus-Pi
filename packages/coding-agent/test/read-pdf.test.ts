@@ -1,6 +1,7 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
+import { getResolvedPDFJS } from "unpdf";
 import { describe, expect, it, vi } from "vitest";
 import { createReadTool } from "../src/core/tools/read.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "../src/core/tools/truncate.ts";
@@ -104,6 +105,88 @@ describe("read tool PDF text", () => {
 			const result = await tool.execute("pdf", { path });
 			expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("Paper evidence") });
 		}
+	});
+
+	it("extracts only a requested PDF page, rather than reading and hiding every other page", async () => {
+		const buffer = createPdf([["First page evidence"], ["Target evidence"], ["Last page evidence"]]);
+		const { getDocument } = await getResolvedPDFJS();
+		const task = getDocument({ data: new Uint8Array(buffer), verbosity: 0 });
+		const pdf = await task.promise;
+		const prototype: Pick<typeof pdf, "getPage"> = Object.getPrototypeOf(pdf);
+		const getPage = vi.spyOn(prototype, "getPage");
+		try {
+			const input = { path: "paper.pdf", pages: "2" };
+			const result = await pdfReadTool(buffer).execute("pdf", input);
+			const text = result.content.find((block) => block.type === "text")?.text;
+			expect(getPage.mock.calls.map(([pageNumber]) => pageNumber)).toEqual([2]);
+			expect(text).toContain("[Page 2 of 3]\nTarget evidence");
+			expect(text).not.toContain("First page evidence");
+			expect(text).not.toContain("Last page evidence");
+		} finally {
+			getPage.mockRestore();
+			await task.destroy();
+		}
+	});
+
+	it("keeps page selection when continuing through selected text lines", async () => {
+		const tool = pdfReadTool(createPdf([["Unrequested"], ["First", "Second"], ["Third"]]));
+		const result = await tool.execute("pdf", { path: "paper.pdf", pages: "2-3", offset: 2, limit: 2 });
+		const text = result.content.find((block) => block.type === "text")?.text;
+		expect(text).toContain("Selected PDF pages: 2-3");
+		expect(text).toContain("First\nSecond");
+		expect(text).not.toContain("Unrequested");
+		expect(text).toContain('Use offset=4, pages="2-3" to continue.');
+		const last = await tool.execute("pdf", { path: "paper.pdf", pages: "2-3", offset: 5, limit: 2 });
+		expect(last.content[0]).toMatchObject({ text: expect.stringContaining("[Page 3 of 3]\nThird") });
+	});
+
+	it.each(["", "0", "-1", "1.5", "1-", "1,2"])("rejects malformed page selection %j", async (pages) => {
+		await expect(pdfReadTool(createPdf([["Evidence"]])).execute("pdf", { path: "paper.pdf", pages })).rejects.toThrow(
+			"Invalid PDF pages",
+		);
+	});
+
+	it.each(["2", "1-2", "2-1", "99999999999999999999999"])(
+		"rejects out-of-bounds or reversed page selection %j",
+		async (pages) => {
+			await expect(
+				pdfReadTool(createPdf([["Evidence"]])).execute("pdf", { path: "paper.pdf", pages }),
+			).rejects.toThrow("outside the valid range 1-1");
+		},
+	);
+
+	it("does not include textless-page warnings from outside the selection", async () => {
+		const tool = pdfReadTool(createPdf([[], ["Requested evidence"]]));
+		const result = await tool.execute("pdf", { path: "paper.pdf", pages: "2" });
+		expect(result.content[0]).toMatchObject({ text: expect.stringContaining("Requested evidence") });
+		expect(result.content[0]).toMatchObject({
+			text: expect.not.stringContaining("No extractable text on this page"),
+		});
+	});
+
+	it("does not substitute unrequested text for an entirely textless selection", async () => {
+		const tool = pdfReadTool(createPdf([["Unrequested evidence"], []]));
+		await expect(tool.execute("pdf", { path: "paper.pdf", pages: "2" })).rejects.toThrow(
+			"Selected PDF pages '2' have no extractable text",
+		);
+	});
+
+	it("rejects page selection on text files and images", async () => {
+		await expect(
+			pdfReadTool(Buffer.from("plain text")).execute("text", { path: "notes.txt", pages: "1" }),
+		).rejects.toThrow("only supported for PDF files");
+		const readFile = vi.fn(async () => Buffer.alloc(0));
+		const image = createReadTool(process.cwd(), {
+			operations: {
+				access: async () => {},
+				detectImageMimeType: async () => "image/png",
+				readFile,
+			},
+		});
+		await expect(image.execute("image", { path: "figure.png", pages: "1" })).rejects.toThrow(
+			"only supported for PDF files",
+		);
+		expect(readFile).not.toHaveBeenCalled();
 	});
 
 	it("applies offset/limit to extracted lines including page markers and retains the extraction caveat", async () => {
