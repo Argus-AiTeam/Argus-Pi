@@ -13,6 +13,7 @@ import {
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
+import { getHarnessProfile } from "../harness-profile.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { BASH_UPDATE_THROTTLE_MS, createShellRenderers } from "./renderers/bash.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -91,16 +92,23 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 			}
 
 			const commandFromStdin = shellConfig.commandTransport === "stdin";
-			const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
-				cwd,
-				detached: process.platform !== "win32",
-				env: env ?? getShellEnv(),
-				stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
-				windowsHide: true,
-			});
+			// Preserve failing pipeline status when experiments save output through tee.
+			const shellCommand =
+				shellName === "bash" && getHarnessProfile() === "argus" ? `set -o pipefail\n${command}` : command;
+			const child = spawn(
+				shellConfig.shell,
+				commandFromStdin ? shellConfig.args : [...shellConfig.args, shellCommand],
+				{
+					cwd,
+					detached: process.platform !== "win32",
+					env: env ?? getShellEnv(),
+					stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
+					windowsHide: true,
+				},
+			);
 			if (commandFromStdin) {
 				child.stdin?.on("error", () => {});
-				child.stdin?.end(command);
+				child.stdin?.end(shellCommand);
 			}
 			if (child.pid) trackDetachedChildPid(child.pid);
 			let timedOut = false;

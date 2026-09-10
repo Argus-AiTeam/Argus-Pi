@@ -3,6 +3,7 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import { getHarnessProfile } from "./harness-profile.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
@@ -124,10 +125,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	const profile = process.env.PI_HARNESS_PROFILE || "argus";
-	if (profile !== "stock" && profile !== "argus") {
-		throw new Error(`Unknown PI_HARNESS_PROFILE: ${profile}. Expected stock or argus.`);
-	}
+	const profile = getHarnessProfile();
 
 	let prompt =
 		profile === "argus"

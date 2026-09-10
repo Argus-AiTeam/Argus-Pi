@@ -80,7 +80,7 @@ These variables are read by Pi itself:
 |----------|-------------|
 | `PI_CODING_AGENT_DIR` | Override the config directory; default is `~/.pi/agent` |
 | `PI_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
-| `PI_HARNESS_PROFILE` | `argus` (default in Argus-Pi) or `stock`: select a task/role-neutral or upstream coding system prompt, without changing tools, permissions, events, or sessions |
+| `PI_HARNESS_PROFILE` | `argus` (default in Argus-Pi) or `stock`: select task-role guidance and local Bash pipeline failure handling, without changing tool access, permissions, events, or sessions |
 | `PI_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
 | `PI_OFFLINE` | Disable startup network operations, including update checks, package updates, and install/update telemetry |
 | `PI_SKIP_VERSION_CHECK` | Disable the `pi.dev` latest-version request |
@@ -106,6 +106,20 @@ authoring-documentation directions with task-role and evidence guidance.
 Tool descriptions, tool-specific guidelines, explicit system prompts, appended
 instructions, project context and Skills are preserved. It does not add tools
 or provide a sandbox. Set `PI_HARNESS_PROFILE=stock` to restore the upstream
-system prompt, especially for developing Pi itself.
+system prompt and local shell behavior, especially for developing Pi itself.
+
+In the `argus` profile, local Bash commands start with `set -o pipefail`, so a
+failed experiment, compiler or proof checker is not reported as successful merely
+because `tee` saved its output. This applies to argv and stdin command transport,
+but does not rewrite commands delegated to custom operations or PowerShell.
+Custom local shells must support Bash's `pipefail` option; unsupported shells fail
+visibly rather than silently claiming pipeline failure detection.
+
+This does not enable `set -e`, retry commands, or infer success from log text.
+Normal shell control flow still applies: explicit `||` recovery and later commands
+can determine the final status. A command may deliberately use `set +o pipefail`;
+`PI_HARNESS_PROFILE=stock` restores upstream behavior for the whole invocation.
+Pipelines deliberately cut short with `head` can expose an upstream SIGPIPE;
+use explicit handling when that is an intended outcome.
 
 `PI_SERVER_DIR` and `PI_SERVER_ID` apply only to the source-only [experimental remote harness](development.md#experimental-remote-harness), not distributed builds.

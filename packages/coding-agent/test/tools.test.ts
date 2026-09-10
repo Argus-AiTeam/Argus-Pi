@@ -73,6 +73,7 @@ describe("Coding Agent Tools", () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
 		// Clean up test directory
 		rmSync(testDir, { recursive: true, force: true });
 	});
@@ -581,6 +582,7 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should send commands over stdin when shell resolution requires it", async () => {
+			vi.stubEnv("PI_HARNESS_PROFILE", "stock");
 			vi.spyOn(shellModule, "getShellConfig").mockReturnValue({
 				shell: process.execPath,
 				args: [

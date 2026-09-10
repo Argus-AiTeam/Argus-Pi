@@ -16,14 +16,19 @@ mission state.
   decision formats intact. The profile does not grant permissions or add a sandbox.
 - Preserve the `pi` CLI, JSON/RPC events, `.pi` configuration and existing provider
   authentication. `argus-pi` is an additional executable name for the same CLI.
-- Set `PI_HARNESS_PROFILE=stock` to restore the upstream default system prompt.
+- Local Bash uses `pipefail` so failed experiments, compilers or proof checkers
+  remain failures when their output is piped through `tee`. This does not enable
+  `set -e`, retry commands, or change custom remote operations or PowerShell.
+- Set `PI_HARNESS_PROFILE=stock` to restore the upstream default system prompt
+  and local Bash pipeline behavior.
 - The existing `read` tool extracts page-marked PDF text, including in read-only
   review sessions. It needs no shell permission or external PDF executable.
   Textless pages are explicitly marked; entirely textless, encrypted or malformed
   documents fail visibly. This is not OCR, figure inspection or layout validation.
 
 The initial experiment changed only the default task prompt; PDF reading is the
-first subsequent tool capability. The Agent loop is unchanged. Small local
+first subsequent tool capability; local pipeline status handling now also
+preserves execution failures. The Agent loop is unchanged. Small local
 prompt-profile trials showed reduced input usage, but also exposed
 timeouts, a provider request error, and missing persisted analysis scripts.
 These are not claims of general performance superiority. Improvements must be
