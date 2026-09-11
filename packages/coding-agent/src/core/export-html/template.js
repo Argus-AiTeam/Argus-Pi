@@ -1271,13 +1271,17 @@
           }
 
           if (msg.role === 'bashExecution') {
-            const isError = msg.cancelled || (msg.exitCode !== 0 && msg.exitCode !== null);
+            const isError = msg.cancelled || msg.signal || msg.exitCode !== 0;
             let html = `<div class="tool-execution ${isError ? 'error' : 'success'}" id="${entryDomId}">${tsHtml}`;
             html += `<div class="tool-command">$ ${escapeHtml(msg.command)}</div>`;
             if (msg.output) html += formatExpandableOutput(msg.output, 10);
             if (msg.cancelled) {
               html += '<div style="color: var(--warning)">(cancelled)</div>';
-            } else if (msg.exitCode !== 0 && msg.exitCode !== null) {
+            } else if (msg.signal) {
+              html += `<div style="color: var(--error)">(terminated by signal ${escapeHtml(msg.signal)})</div>`;
+            } else if (msg.exitCode === null || msg.exitCode === undefined) {
+              html += '<div style="color: var(--error)">(terminated without an exit code)</div>';
+            } else if (msg.exitCode !== 0) {
               html += `<div style="color: var(--error)">(exit ${msg.exitCode})</div>`;
             }
             html += '</div>';

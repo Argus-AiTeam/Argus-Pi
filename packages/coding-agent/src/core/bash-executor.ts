@@ -31,6 +31,8 @@ export interface BashResult {
 	output: string;
 	/** Process exit code (undefined if killed/cancelled) */
 	exitCode: number | undefined;
+	/** Termination signal when observable */
+	signal?: NodeJS.Signals;
 	/** Whether the command was cancelled via signal */
 	cancelled: boolean;
 	/** Whether the output was truncated */
@@ -123,6 +125,7 @@ export async function executeBashWithOperations(
 		return {
 			output: truncationResult.truncated ? truncationResult.content : fullOutput,
 			exitCode: cancelled ? undefined : (result.exitCode ?? undefined),
+			signal: result.signal ?? undefined,
 			cancelled,
 			truncated: truncationResult.truncated,
 			fullOutputPath: tempFilePath,

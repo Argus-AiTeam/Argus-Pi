@@ -3,6 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
+import { bashExecutionToText } from "../../src/core/messages.ts";
 import type { BashOperations } from "../../src/core/tools/bash.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
@@ -51,6 +52,30 @@ describe("AgentSession bash and persistence characterization", () => {
 		expect(harness.session.hasPendingBashMessages).toBe(false);
 		expect(harness.session.messages[harness.session.messages.length - 1]?.role).toBe("bashExecution");
 		expect(getEntryTypes(harness)).toContain("message");
+	});
+
+	it.each(["SIGTERM", undefined] as const)("persists an incomplete shell result with signal %s", async (signal) => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		const result = await harness.session.executeBash("controlled incomplete command", undefined, {
+			operations: {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("partial output"));
+					return { exitCode: null, signal };
+				},
+			},
+		});
+		expect(result).toMatchObject({ output: "partial output", exitCode: undefined, signal, cancelled: false });
+		const message = harness.session.messages.at(-1);
+		if (!message || message.role !== "bashExecution") throw new Error("Missing persisted bash execution");
+		expect(message.signal).toBe(signal);
+		expect(bashExecutionToText(message)).toContain(
+			signal ? "terminated by signal SIGTERM" : "terminated without an exit code",
+		);
+		expect(harness.sessionManager.getEntries().at(-1)).toMatchObject({
+			type: "message",
+			message: { role: "bashExecution", signal, output: "partial output" },
+		});
 	});
 
 	it("defers bash results while streaming and flushes them before the next prompt", async () => {

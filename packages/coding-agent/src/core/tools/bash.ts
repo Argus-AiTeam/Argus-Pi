@@ -62,7 +62,7 @@ export interface BashOperations {
 	 * @param command The command to execute
 	 * @param cwd Working directory
 	 * @param options Execution options
-	 * @returns Promise resolving to exit code (null if killed)
+	 * @returns Promise resolving to exit code (null if killed) and signal when observable
 	 */
 	exec: (
 		command: string,
@@ -73,7 +73,7 @@ export interface BashOperations {
 			timeout?: number;
 			env?: NodeJS.ProcessEnv;
 		},
-	) => Promise<{ exitCode: number | null }>;
+	) => Promise<{ exitCode: number | null; signal?: NodeJS.Signals | null }>;
 }
 
 /** Shared process execution used by the built-in shell tools. */
@@ -142,7 +142,7 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 				if (timedOut) {
 					throw new Error(`timeout:${timeout}`);
 				}
-				return { exitCode };
+				return child.signalCode ? { exitCode, signal: child.signalCode } : { exitCode };
 			} finally {
 				if (child.pid) untrackDetachedChildPid(child.pid);
 				if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -345,6 +345,7 @@ export function createShellToolDefinition(
 
 			try {
 				let exitCode: number | null;
+				let processSignal: NodeJS.Signals | null | undefined;
 				try {
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
@@ -353,6 +354,7 @@ export function createShellToolDefinition(
 						env: spawnContext.env,
 					});
 					exitCode = result.exitCode;
+					processSignal = result.signal;
 				} catch (err) {
 					const snapshot = await finishOutput();
 					const { text } = formatOutput(snapshot, "");
@@ -368,7 +370,13 @@ export function createShellToolDefinition(
 
 				const snapshot = await finishOutput();
 				const { text: outputText, details } = formatOutput(snapshot);
-				if (exitCode !== 0 && exitCode !== null) {
+				if (processSignal) {
+					throw new Error(appendStatus(outputText, `Command terminated by signal ${processSignal}`));
+				}
+				if (exitCode === null) {
+					throw new Error(appendStatus(outputText, "Command terminated without an exit code"));
+				}
+				if (exitCode !== 0) {
 					throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
 				}
 				return { content: [{ type: "text", text: outputText }], details };

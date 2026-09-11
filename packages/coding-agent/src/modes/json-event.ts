@@ -14,7 +14,7 @@ type JsonMessageUpdateEvent = {
 	assistantMessageEvent: ToJsonAssistantMessageEvent<MessageUpdateEvent["assistantMessageEvent"]>;
 };
 
-/** Session event shape emitted by the JSON and RPC stdout protocols. */
+/** Base event shape for RPC and stock JSON; Argus print mode adds attempt diagnostics. */
 export type JsonAgentSessionEvent = Exclude<AgentSessionEvent, { type: "message_update" }> | JsonMessageUpdateEvent;
 
 function toJsonAssistantMessageEvent(

@@ -14,13 +14,20 @@ mission state.
   instead of assuming every invocation is a coding task.
 - Keep tool descriptions, Skills, project context, explicit system prompts and
   decision formats intact. The profile does not grant permissions or add a sandbox.
-- Preserve the `pi` CLI, JSON/RPC events, `.pi` configuration and existing provider
-  authentication. `argus-pi` is an additional executable name for the same CLI.
+- Preserve the `pi` CLI, `.pi` configuration and existing provider authentication.
+  `argus-pi` is an additional executable name for the same CLI. Argus-mode JSON
+  output distinguishes recoverable attempt diagnostics from terminal failure,
+  preserving usage and provider-turn accounting; stock, RPC and SDK retain
+  upstream provider-retry event shapes.
 - Local Bash uses `pipefail` so failed experiments, compilers or proof checkers
   remain failures when their output is piped through `tee`. This does not enable
   `set -e`, retry commands, or change custom remote operations or PowerShell.
+- Signal-terminated commands retain partial output and an observable signal.
+  A missing exit code is not treated as success. User/RPC shell records preserve
+  this status in session history, model context, terminal display and HTML export.
 - Set `PI_HARNESS_PROFILE=stock` to restore the upstream default system prompt
-  and local Bash pipeline behavior.
+  and local Bash pipeline behavior. Both profiles report terminal text/JSON
+  failures with a nonzero exit status.
 - The existing `read` tool extracts page-marked PDF text, including in read-only
   review sessions. It needs no shell permission or external PDF executable.
   Use `pages: "3"` or `pages: "3-5"` to extract just the relevant pages of a long

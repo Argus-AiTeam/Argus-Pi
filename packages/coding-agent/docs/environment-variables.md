@@ -80,7 +80,7 @@ These variables are read by Pi itself:
 |----------|-------------|
 | `PI_CODING_AGENT_DIR` | Override the config directory; default is `~/.pi/agent` |
 | `PI_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
-| `PI_HARNESS_PROFILE` | `argus` (default in Argus-Pi) or `stock`: select task-role guidance and local Bash pipeline failure handling, without changing tool access, permissions, events, or sessions |
+| `PI_HARNESS_PROFILE` | `argus` (default in Argus-Pi) or `stock`: select task-role guidance, local Bash pipeline handling and JSON retry-status compatibility, without changing tool access, permissions or sessions |
 | `PI_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
 | `PI_OFFLINE` | Disable startup network operations, including update checks, package updates, and install/update telemetry |
 | `PI_SKIP_VERSION_CHECK` | Disable the `pi.dev` latest-version request |
@@ -121,5 +121,27 @@ can determine the final status. A command may deliberately use `set +o pipefail`
 `PI_HARNESS_PROFILE=stock` restores upstream behavior for the whole invocation.
 Pipelines deliberately cut short with `head` can expose an upstream SIGPIPE;
 use explicit handling when that is an intended outcome.
+
+### JSON retry and terminal status
+
+In the `argus` profile, `--mode json` distinguishes a failed provider attempt
+from a terminally failed turn. Original failed-message and streaming-error events
+are retained inside `attempt_error` diagnostic events. Each failed assistant
+`message_end` also emits one receipt with the original model and usage, empty
+content, and `stopReason: "pending"`. This is not a success message: the turn is
+still unresolved. Failed partial prose is not promoted into an Argus decision.
+
+A successful final assistant message resolves the pending attempt error. If the
+session instead reaches `agent_settled` with an unresolved error, a terminal
+`message_update` error is emitted immediately before settlement, including a
+direct `assistantMessageEvent.errorMessage`. It is not a second usage receipt.
+Provider-turn counts, token/cost data, retry events and original diagnostics are
+preserved. Retry cancellation and exhaustion remain failures.
+
+`PI_HARNESS_PROFILE=stock` keeps the upstream JSON event shapes. SDK and RPC event
+streams are unchanged by this print-mode compatibility behavior. Both text and
+JSON print modes return a nonzero process status for a terminal error or abort,
+regardless of profile. Tool errors that the agent handles are not automatically
+treated as terminal provider failures.
 
 `PI_SERVER_DIR` and `PI_SERVER_ID` apply only to the source-only [experimental remote harness](development.md#experimental-remote-harness), not distributed builds.

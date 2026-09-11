@@ -59,6 +59,12 @@ describe("export HTML markdown link sanitization", () => {
 		expect(templateJs).toMatch(/\$\{escapeHtml\(entry\.type\)\}/);
 	});
 
+	it("escapes signal status and labels missing exit codes as incomplete", () => {
+		expect(templateJs).toMatch(/terminated by signal \$\{escapeHtml\(msg\.signal\)\}/);
+		expect(templateJs).toContain("(terminated without an exit code)");
+		expect(templateJs).not.toMatch(/terminated by signal \$\{msg\.signal\}/);
+	});
+
 	it("escapes model names in the exported header", () => {
 		// Assistant message provider/model values are collected from the session and rendered with innerHTML.
 		expect(templateJs).not.toMatch(/\$\{globalStats\.models\.join\(', '\) \|\| 'unknown'\}/);

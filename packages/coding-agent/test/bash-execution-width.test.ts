@@ -6,6 +6,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BashExecutionComponent } from "../src/modes/interactive/components/bash-execution.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 /** Minimal TUI stub that only exposes terminal.columns */
 function createTuiStub(columns: number): { columns: number; stub: any } {
@@ -54,6 +55,25 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 			const w = visibleWidth(lines[i]);
 			expect(w, `Line ${i} visibleWidth=${w} > ${narrowWidth}`).toBeLessThanOrEqual(narrowWidth);
 		}
+	});
+
+	it.each(["SIGTERM", undefined] as const)("shows incomplete execution with signal %s as an error", (signal) => {
+		const { stub } = createTuiStub(120);
+		const component = new BashExecutionComponent("incomplete", stub);
+		component.appendOutput("partial output");
+		component.setComplete(undefined, false, undefined, undefined, signal);
+		const text = stripAnsi(component.render(120).join("\n"));
+		expect(text).toContain("partial output");
+		expect(text).toContain(signal ? "terminated by signal SIGTERM" : "terminated without an exit code");
+	});
+
+	it("keeps explicit cancellation distinct from signal termination", () => {
+		const { stub } = createTuiStub(120);
+		const component = new BashExecutionComponent("cancelled", stub);
+		component.setComplete(undefined, true, undefined, undefined, "SIGTERM");
+		const text = stripAnsi(component.render(120).join("\n"));
+		expect(text).toContain("(cancelled)");
+		expect(text).not.toContain("terminated by signal");
 	});
 
 	it("re-computes lines when width changes between renders", () => {

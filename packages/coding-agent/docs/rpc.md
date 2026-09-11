@@ -518,6 +518,13 @@ If output was truncated, includes `fullOutputPath`:
 }
 ```
 
+`success: true` means the RPC command was handled, not that the shell command
+succeeded. Inspect `data.exitCode`, `data.cancelled` and `data.signal`. In
+Argus-Pi, a signal-terminated command includes an observable signal such as
+`"signal": "SIGTERM"` and has no numeric exit code. A missing exit code is not
+success. Partial output remains available; signal or incomplete-termination
+status is also retained in session history and the next model context.
+
 **How bash results reach the LLM:**
 
 The `bash` command executes immediately and returns a `BashResult`. Internally, a `BashExecutionMessage` is created and stored in the agent's message state.

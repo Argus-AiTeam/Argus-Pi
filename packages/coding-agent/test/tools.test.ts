@@ -5,6 +5,7 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
+import { bashExecutionToText } from "../src/core/messages.ts";
 import {
 	type BashOperations,
 	createBashTool,
@@ -737,6 +738,47 @@ describe("Coding Agent Tools", () => {
 
 			expect(result.exitCode).toBe(0);
 			expect(result.output).toBe("red\n");
+		});
+
+		it("should preserve partial output and signal when the shell terminates itself", async () => {
+			if (process.platform === "win32") return;
+
+			const command = "printf 'partial evidence\\n'; kill -TERM $$";
+			const result = await executeBashWithOperations(command, testDir, createLocalBashOperations());
+
+			expect(result.output).toContain("partial evidence");
+			expect(result.exitCode).toBeUndefined();
+			expect(result.signal).toBe("SIGTERM");
+			expect(result.cancelled).toBe(false);
+
+			expect(
+				bashExecutionToText({
+					role: "bashExecution",
+					command,
+					output: result.output,
+					exitCode: result.exitCode,
+					signal: result.signal,
+					cancelled: result.cancelled,
+					truncated: result.truncated,
+					fullOutputPath: result.fullOutputPath,
+					timestamp: Date.now(),
+				}),
+			).toContain("command terminated by signal SIGTERM");
+
+			const bash = createBashTool(testDir);
+			await expect(bash.execute("test-call-signal", { command })).rejects.toThrow(/partial evidence[\s\S]*SIGTERM/);
+		});
+
+		it("does not treat termination without an observable signal as success", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("partial evidence\n"));
+					return { exitCode: null };
+				},
+			};
+			await expect(
+				createBashTool(testDir, { operations }).execute("unknown-exit", { command: "remote" }),
+			).rejects.toThrow(/partial evidence[\s\S]*terminated without an exit code/);
 		});
 
 		it("should persist full output when truncation happens by line count only", async () => {

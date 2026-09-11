@@ -23,6 +23,7 @@ export class BashExecutionComponent extends Container {
 	private outputLines: string[] = [];
 	private status: "running" | "complete" | "cancelled" | "error" = "running";
 	private exitCode: number | undefined = undefined;
+	private signal: string | undefined;
 	private loader: Loader;
 	private truncationResult?: TruncationResult;
 	private fullOutputPath?: string;
@@ -100,13 +101,11 @@ export class BashExecutionComponent extends Container {
 		cancelled: boolean,
 		truncationResult?: TruncationResult,
 		fullOutputPath?: string,
+		signal?: string,
 	): void {
 		this.exitCode = exitCode;
-		this.status = cancelled
-			? "cancelled"
-			: exitCode !== 0 && exitCode !== undefined && exitCode !== null
-				? "error"
-				: "complete";
+		this.signal = signal;
+		this.status = cancelled ? "cancelled" : signal || exitCode !== 0 ? "error" : "complete";
 		this.truncationResult = truncationResult;
 		this.fullOutputPath = fullOutputPath;
 
@@ -189,7 +188,12 @@ export class BashExecutionComponent extends Container {
 			if (this.status === "cancelled") {
 				statusParts.push(theme.fg("warning", "(cancelled)"));
 			} else if (this.status === "error") {
-				statusParts.push(theme.fg("error", `(exit ${this.exitCode})`));
+				const reason = this.signal
+					? `terminated by signal ${this.signal}`
+					: this.exitCode === undefined || this.exitCode === null
+						? "terminated without an exit code"
+						: `exit ${this.exitCode}`;
+				statusParts.push(theme.fg("error", `(${reason})`));
 			}
 
 			// Add truncation warning (context truncation, not preview truncation)
