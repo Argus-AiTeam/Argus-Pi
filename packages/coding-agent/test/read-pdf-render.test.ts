@@ -5,7 +5,7 @@ import { readRenderers } from "../src/core/tools/renderers/read.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
-describe("PDF read call display", () => {
+describe("read call selection display", () => {
 	beforeAll(() => initTheme("dark"));
 
 	it.each([
@@ -13,6 +13,16 @@ describe("PDF read call display", () => {
 		{ path: "paper.pdf", pages: "2", expected: "paper.pdf [pages 2]" },
 		{ path: join(getDocsPath(), "paper.pdf"), pages: "2-3", expected: "paper.pdf [pages 2-3]" },
 		{ path: "paper.pdf", pages: "2\n\u001b[31mspoof", expected: "paper.pdf [invalid arg]" },
+		{ path: "book.ipynb", cells: "2-3", expected: "book.ipynb [cells 2-3]" },
+		{
+			path: "book.ipynb",
+			cells: "2",
+			includeOutputs: true,
+			offset: 3,
+			limit: 2,
+			expected: "book.ipynb [cells 2] [stored text outputs]:3-4",
+		},
+		{ path: "book.ipynb", cells: "2\n\u001b[31mspoof", expected: "book.ipynb [invalid arg]" },
 	])("shows the requested page selection for $path", ({ expected, ...args }) => {
 		const component = readRenderers.renderCall!(args, theme, {
 			args,

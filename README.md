@@ -37,6 +37,17 @@ mission state.
   documents fail visibly. This is not OCR, figure inspection or layout validation.
   Selection skips text extraction outside the range, not file loading or document
   parsing, and does not validate unselected page content. No text cache is used.
+- Notebook reads can use `cells: "3"` or `cells: "1-3"` for a source-first view
+  of nbformat 4 notebooks. Start with `cells: "1"` to discover the cell count.
+  The view includes saved execution counts and an output
+  inventory, so long stored logs do not hide later validation code. Use
+  `includeOutputs: true` for stored text/error outputs; rich MIME payloads are
+  listed but not rendered. Saved outputs do not prove a fresh run or correctness.
+  No code is executed or rewritten. Omit `cells` for the original raw JSON view,
+  including exact editing context. `offset`/`limit` count rendered view lines;
+  continuation notices retain the cell and output selection. The whole JSON file
+  is still loaded and parsed; this is not a streaming JSON reader or a notebook
+  execution engine.
 
 The initial experiment changed only the default task prompt; PDF reading is the
 first subsequent tool capability; local pipeline status handling now also

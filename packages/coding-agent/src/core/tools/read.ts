@@ -9,7 +9,9 @@ import { raceWithAbortSignal } from "../../utils/abort.ts";
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
+import { readNotebookCells } from "./notebook-read.ts";
 import { resolveReadPathAsync } from "./path-utils.ts";
+import { parseReadRange } from "./read-range.ts";
 import { readRenderers } from "./renderers/read.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
@@ -19,6 +21,18 @@ const readSchema = Type.Object({
 	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 	pages: Type.Optional(Type.String({ description: "PDF pages to extract (1-indexed), e.g. '3' or '3-5'. PDF only." })),
+	cells: Type.Optional(
+		Type.String({
+			description:
+				"Notebook cells (1-indexed), e.g. '3' or '3-5'. Start with '1' to discover the count. nbformat 4 only.",
+		}),
+	),
+	includeOutputs: Type.Optional(
+		Type.Boolean({
+			description:
+				"With cells, include stored text/error outputs (default: false). Does not execute code or render images.",
+		}),
+	),
 });
 
 export const readToolSystemPromptContribution = {
@@ -66,10 +80,7 @@ function getNonVisionImageNote(model: Model<Api> | undefined): string | undefine
 }
 
 async function readPdfText(buffer: Buffer, signal?: AbortSignal, pageRange?: string): Promise<string> {
-	const range = pageRange?.match(/^([1-9]\d*)(?:-([1-9]\d*))?$/);
-	if (pageRange !== undefined && !range) {
-		throw new Error("Invalid PDF pages: use a page number or inclusive range, such as '3' or '3-5'.");
-	}
+	const range = pageRange === undefined ? undefined : parseReadRange(pageRange, "PDF pages");
 	const { getDocument } = await getResolvedPDFJS();
 	if (signal?.aborted) throw new Error("Operation aborted");
 	// Reject damaged content instead of returning partial evidence, and keep parser logs out of RPC stdout.
@@ -79,8 +90,7 @@ async function readPdfText(buffer: Buffer, signal?: AbortSignal, pageRange?: str
 		if ((await raceWithAbortSignal(pdf.getPermissions(), signal)) !== null) {
 			throw new Error("Encrypted PDFs are not supported.");
 		}
-		const firstPage = range ? Number(range[1]) : 1;
-		const lastPage = range ? Number(range[2] ?? range[1]) : pdf.numPages;
+		const [firstPage, lastPage] = range ?? [1, pdf.numPages];
 		if (firstPage > lastPage || lastPage > pdf.numPages) {
 			throw new Error(`Requested PDF pages '${pageRange}' are outside the valid range 1-${pdf.numPages}.`);
 		}
@@ -129,14 +139,14 @@ export function createReadToolDefinition(
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files, PDF text extraction, and images (jpg, png, gif, webp, bmp). Images are sent as attachments. PDFs return page-marked text, not visual verification of figures or layout; pages without text are marked explicitly, while encrypted or entirely textless selections produce errors. For PDFs, use pages (e.g. "3-5") to extract only the requested pages. Text output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for text lines, counted within the selected PDF pages when pages is supplied. To continue, keep the same pages selection and advance offset.`,
+		description: `Read text files, PDF text, notebooks, and images (jpg, png, gif, webp, bmp). Images are attachments. PDFs return page-marked text, not visual verification; use pages (e.g. "3-5") to select pages. Encrypted or entirely textless PDF selections error. For nbformat 4 notebooks, cells selects cell source, saved execution counts and output inventory; includeOutputs=true adds saved text/error outputs, not image rendering or code execution. Omit cells for raw JSON. Saved outputs do not prove a fresh run. pages and cells cannot be combined. Text is limited to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB. offset/limit count lines within the selected view; retain selection options when continuing.`,
 		promptSnippet: readToolSystemPromptContribution.snippet,
 		promptGuidelines: [...readToolSystemPromptContribution.guidelines],
 		parameters: readSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		async execute(
 			_toolCallId,
-			{ path, offset, limit, pages }: ReadToolInput,
+			{ path, offset, limit, pages, cells, includeOutputs }: ReadToolInput,
 			signal?: AbortSignal,
 			_onUpdate?,
 			ctx?: ExtensionContext,
@@ -156,6 +166,11 @@ export function createReadToolDefinition(
 
 					(async () => {
 						try {
+							if (pages !== undefined && cells !== undefined)
+								throw new Error("pages and cells cannot be combined.");
+							if (includeOutputs !== undefined && cells === undefined) {
+								throw new Error("includeOutputs requires a notebook cells selection.");
+							}
 							const absolutePath = await resolveReadPathAsync(path, ctx?.cwd || cwd);
 							if (aborted) return;
 							// Check if file exists and is readable.
@@ -166,6 +181,8 @@ export function createReadToolDefinition(
 							let details: ReadToolDetails | undefined;
 							const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
 							if (mimeType) {
+								if (cells !== undefined)
+									throw new Error("The cells parameter is only supported for notebooks.");
 								if (pages !== undefined)
 									throw new Error("The pages parameter is only supported for PDF files.");
 								// Read image as binary.
@@ -193,7 +210,13 @@ export function createReadToolDefinition(
 								if (pages !== undefined && !isPdf) {
 									throw new Error("The pages parameter is only supported for PDF files.");
 								}
-								const textContent = isPdf ? await readPdfText(buffer, signal, pages) : buffer.toString("utf-8");
+								if (cells !== undefined && isPdf)
+									throw new Error("The cells parameter is only supported for notebooks.");
+								const textContent = isPdf
+									? await readPdfText(buffer, signal, pages)
+									: cells !== undefined
+										? readNotebookCells(buffer.toString("utf-8"), cells, includeOutputs ?? false)
+										: buffer.toString("utf-8");
 								if (aborted) return;
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
@@ -216,13 +239,19 @@ export function createReadToolDefinition(
 								}
 								// Apply truncation, respecting both line and byte limits.
 								const truncation = truncateHead(selectedContent);
-								const pageSelection = pages === undefined ? "" : `, pages="${pages}"`;
+								const readSelection =
+									pages !== undefined
+										? `, pages="${pages}"`
+										: cells !== undefined
+											? `, cells="${cells}"${includeOutputs ? ", includeOutputs=true" : ""}`
+											: "";
 								let outputText: string;
 								if (truncation.firstLineExceedsLimit) {
 									const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
-									outputText = isPdf
-										? `[Extracted PDF line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit and cannot be displayed by read.]`
-										: `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+									outputText =
+										isPdf || cells !== undefined
+											? `[${isPdf ? "Extracted PDF" : "Notebook view"} line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit and cannot be displayed by read.]`
+											: `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
 									details = { truncation };
 								} else if (truncation.truncated) {
 									// Truncation occurred. Build an actionable continuation notice.
@@ -230,16 +259,16 @@ export function createReadToolDefinition(
 									const nextOffset = endLineDisplay + 1;
 									outputText = truncation.content;
 									if (truncation.truncatedBy === "lines") {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset}${pageSelection} to continue.]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset}${readSelection} to continue.]`;
 									} else {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset}${pageSelection} to continue.]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset}${readSelection} to continue.]`;
 									}
 									details = { truncation };
 								} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
 									// User-specified limit stopped early, but the file still has more content.
 									const remaining = allLines.length - (startLine + userLimitedLines);
 									const nextOffset = startLine + userLimitedLines + 1;
-									outputText = `${truncation.content}\n\n[${remaining} more lines in file. Use offset=${nextOffset}${pageSelection} to continue.]`;
+									outputText = `${truncation.content}\n\n[${remaining} more lines in ${cells === undefined ? "file" : "view"}. Use offset=${nextOffset}${readSelection} to continue.]`;
 								} else {
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
@@ -247,6 +276,8 @@ export function createReadToolDefinition(
 								if (isPdf) {
 									const selection = pages === undefined ? "" : ` Selected PDF pages: ${pages}.`;
 									outputText = `[PDF text extraction only; not visual verification of images, figures, or layout.${selection} offset/limit count the extracted text lines, including page markers.]\n\n${outputText}`;
+								} else if (cells !== undefined) {
+									outputText = `[Notebook cell view: cells ${cells}; includeOutputs=${includeOutputs ?? false}. No code was executed. Saved outputs and execution counts do not prove a fresh run or correctness. offset/limit count view lines, not raw JSON lines. Omit cells for raw JSON.]\n\n${outputText}`;
 								}
 								content = [{ type: "text", text: outputText }];
 							}

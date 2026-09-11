@@ -16,6 +16,7 @@ import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../extensions/types.ts";
 import { resolveToCwd } from "../path-utils.ts";
 import type { ReadToolDetails } from "../read.ts";
+import { READ_RANGE_PATTERN } from "../read-range.ts";
 import { getTextOutput, invalidArgText, renderToolPath, replaceTabs, str } from "../render-utils.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../truncate.ts";
 
@@ -24,19 +25,30 @@ interface CompactReadClassification {
 	label: string;
 }
 const COMPACT_RESOURCE_FILE_NAMES = new Set(["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
-type ReadRenderArgs = { path?: string; file_path?: string; offset?: number; limit?: number; pages?: string };
+type ReadRenderArgs = {
+	path?: string;
+	file_path?: string;
+	offset?: number;
+	limit?: number;
+	pages?: string;
+	cells?: string;
+	includeOutputs?: boolean;
+};
 function formatReadSelection(args: ReadRenderArgs | undefined, theme: Theme): string {
-	const pageLabel = typeof args?.pages === "string" && /^[1-9]\d*(?:-[1-9]\d*)?$/.test(args.pages) ? args.pages : null;
-	const pages =
-		args?.pages === undefined
-			? ""
-			: pageLabel === null
-				? ` ${invalidArgText(theme)}`
-				: theme.fg("warning", ` [pages ${pageLabel}]`);
-	if (args?.offset === undefined && args?.limit === undefined) return pages;
+	let selection = "";
+	for (const name of ["pages", "cells"] as const) {
+		const value = args?.[name];
+		if (value === undefined) continue;
+		selection +=
+			typeof value === "string" && READ_RANGE_PATTERN.test(value)
+				? theme.fg("warning", ` [${name} ${value}]`)
+				: ` ${invalidArgText(theme)}`;
+	}
+	if (args?.includeOutputs === true) selection += theme.fg("warning", " [stored text outputs]");
+	if (args?.offset === undefined && args?.limit === undefined) return selection;
 	const startLine = args.offset ?? 1;
 	const endLine = args.limit !== undefined ? startLine + args.limit - 1 : "";
-	return pages + theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
+	return selection + theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
 }
 function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme, cwd: string): string {
 	const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
