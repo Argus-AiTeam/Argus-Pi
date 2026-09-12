@@ -43,6 +43,7 @@ export interface PrintModeOptions {
  */
 export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: PrintModeOptions): Promise<number> {
 	const { mode, messages = [], initialMessage, initialImages } = options;
+	let remainingPrompts = messages.length + (initialMessage ? 1 : 0);
 	let argusJson = false;
 	let exitCode = 0;
 	let pendingError: AssistantErrorEvent | undefined;
@@ -139,7 +140,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			if (event.type === "auto_retry_end" && !event.success) {
 				terminalError = event.finalError || "Pi retry did not complete.";
 			}
-			if (event.type === "agent_settled" && pendingError) {
+			if (event.type === "agent_settled" && pendingError && remainingPrompts === 0) {
 				terminalError ??= pendingError.error.errorMessage || `Request ${pendingError.reason}`;
 				if (argusJson) {
 					writeJsonEvent({
@@ -185,12 +186,14 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		await rebindSession();
 
 		if (initialMessage) {
+			remainingPrompts--;
 			await session.prompt(initialMessage, { images: initialImages });
 		}
 
 		for (const message of messages) {
 			pendingError = undefined;
 			terminalError = undefined;
+			remainingPrompts--;
 			await session.prompt(message);
 		}
 

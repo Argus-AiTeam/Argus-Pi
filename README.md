@@ -18,7 +18,9 @@ mission state.
   `argus-pi` is an additional executable name for the same CLI. Argus-mode JSON
   output distinguishes recoverable attempt diagnostics from terminal failure,
   preserving usage and provider-turn accounting; stock, RPC and SDK retain
-  upstream provider-retry event shapes.
+  upstream provider-retry event shapes. When explicit prompts are queued in one
+  print invocation, an earlier failed prompt does not emit terminal failure
+  before a later prompt has a chance to complete.
 - Local Bash uses `pipefail` so failed experiments, compilers or proof checkers
   remain failures when their output is piped through `tee`. This does not enable
   `set -e`, retry commands, or change custom remote operations or PowerShell.
@@ -44,7 +46,9 @@ mission state.
   `includeOutputs: true` for stored text/error outputs; rich MIME payloads are
   listed but not rendered. Saved outputs do not prove a fresh run or correctness.
   No code is executed or rewritten. Omit `cells` for the original raw JSON view,
-  including exact editing context. `offset`/`limit` count rendered view lines;
+  including exact editing context. `includeOutputs: false` is equivalent to
+  omission, including for non-notebook reads; `true` requires `cells`.
+  `offset`/`limit` count rendered view lines;
   continuation notices retain the cell and output selection. The whole JSON file
   is still loaded and parsed; this is not a streaming JSON reader or a notebook
   execution engine.

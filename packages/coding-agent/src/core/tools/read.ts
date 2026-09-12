@@ -168,7 +168,7 @@ export function createReadToolDefinition(
 						try {
 							if (pages !== undefined && cells !== undefined)
 								throw new Error("pages and cells cannot be combined.");
-							if (includeOutputs !== undefined && cells === undefined) {
+							if (includeOutputs === true && cells === undefined) {
 								throw new Error("includeOutputs requires a notebook cells selection.");
 							}
 							const absolutePath = await resolveReadPathAsync(path, ctx?.cwd || cwd);

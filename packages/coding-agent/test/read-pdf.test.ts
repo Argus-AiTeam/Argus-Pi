@@ -99,6 +99,13 @@ describe("read tool PDF text", () => {
 		expect(result.details).toBeUndefined();
 	});
 
+	it("treats includeOutputs=false as the default for PDF reads", async () => {
+		const tool = pdfReadTool(createPdf([["Paper evidence"]]));
+		const omitted = await tool.execute("omitted", { path: "paper.pdf" });
+		const explicitFalse = await tool.execute("false", { path: "paper.pdf", includeOutputs: false });
+		expect(explicitFalse).toEqual(omitted);
+	});
+
 	it("uses PDF magic for extensionless input and accepts uppercase PDF extensions", async () => {
 		const tool = pdfReadTool(createPdf([["Paper evidence"]]));
 		for (const path of ["paper", "paper.PDF"]) {

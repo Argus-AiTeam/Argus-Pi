@@ -293,24 +293,51 @@ describe("runPrintMode", () => {
 		expect(host.dispose).toHaveBeenCalledOnce();
 	});
 
-	it("keeps terminal state scoped to each explicitly supplied prompt", async () => {
-		const failed = createAssistantMessage({ stopReason: "error", errorMessage: "first prompt failed" });
-		const recovered = createAssistantMessage({ text: "second prompt succeeded" });
-		const host = createRuntimeHost(failed);
-		vi.spyOn(outputGuard, "writeRawStdout").mockImplementation(() => {});
-		const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-		host.session.prompt.mockImplementation(async (prompt: string) => {
-			const message = prompt === "first" ? failed : recovered;
-			host.session.state.messages = [message];
-			const listener = host.session.subscribe.mock.calls[0][0];
-			listener({ type: "message_end", message });
-			listener({ type: "agent_settled" });
-		});
-		const exitCode = await runPrintMode(host as unknown as Parameters<typeof runPrintMode>[0], {
-			mode: "json",
-			messages: ["first", "second"],
-		});
-		expect(exitCode).toBe(0);
-		expect(errors).not.toHaveBeenCalled();
-	});
+	it.each([
+		{ initial: false, finalReason: "stop" },
+		{ initial: true, finalReason: "stop" },
+		{ initial: false, finalReason: "error" },
+		{ initial: true, finalReason: "error" },
+	] as const)(
+		"reports only the final queued prompt's terminal state (initial=$initial, final=$finalReason)",
+		async ({ initial, finalReason }) => {
+			const failed = createAssistantMessage({ stopReason: "error", errorMessage: "first prompt failed" });
+			const final = createAssistantMessage({
+				text: "second prompt",
+				stopReason: finalReason,
+				errorMessage: finalReason === "error" ? "second prompt failed" : undefined,
+			});
+			const host = createRuntimeHost(failed);
+			const writes = vi.spyOn(outputGuard, "writeRawStdout").mockImplementation(() => {});
+			const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+			host.session.prompt.mockImplementation(async (prompt: string) => {
+				const message = prompt === "first" ? failed : final;
+				host.session.state.messages = [message];
+				const listener = host.session.subscribe.mock.calls[0][0];
+				listener({ type: "message_end", message });
+				listener({ type: "agent_settled" });
+			});
+			const exitCode = await runPrintMode(host as unknown as Parameters<typeof runPrintMode>[0], {
+				mode: "json",
+				initialMessage: initial ? "first" : undefined,
+				messages: initial ? ["second"] : ["first", "second"],
+			});
+			const output: Record<string, unknown>[] = writes.mock.calls.map(([line]) => JSON.parse(line));
+			expect(output.filter((event) => event.type === "message_end")).toHaveLength(2);
+			expect(output).toContainEqual({ type: "attempt_error", event: { type: "message_end", message: failed } });
+			if (finalReason === "error") {
+				expect(exitCode).toBe(1);
+				expect(errors).toHaveBeenCalledWith("second prompt failed");
+				expect(output.filter((event) => event.type === "message_update")).toHaveLength(1);
+				expect(output.at(-2)).toMatchObject({
+					type: "message_update",
+					assistantMessageEvent: { errorMessage: "second prompt failed" },
+				});
+			} else {
+				expect(exitCode).toBe(0);
+				expect(errors).not.toHaveBeenCalled();
+				expect(output.some((event) => event.type === "message_update")).toBe(false);
+			}
+		},
+	);
 });

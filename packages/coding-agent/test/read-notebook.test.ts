@@ -74,6 +74,23 @@ describe("read tool notebook cells", () => {
 		}
 	});
 
+	it("treats includeOutputs=false as the default for text and raw notebook reads", async () => {
+		for (const { path, data } of [
+			{ path: "measurements.csv", data: "subject,before,after\nA,1,2\n" },
+			{
+				path: "experiment.ipynb",
+				data: JSON.stringify({ nbformat: 4, nbformat_minor: 4, metadata: {}, cells: [] }),
+			},
+		]) {
+			const tool = createReadTool(process.cwd(), {
+				operations: { access: async () => {}, readFile: async () => Buffer.from(data) },
+			});
+			const omitted = await tool.execute("omitted", { path });
+			const explicitFalse = await tool.execute("false", { path, includeOutputs: false });
+			expect(explicitFalse).toEqual(omitted);
+		}
+	});
+
 	it("selects markdown and raw cells while preserving multiline source", async () => {
 		const tool = notebookTool([
 			{ cell_type: "markdown", source: "unrequested", metadata: {} },
@@ -199,7 +216,7 @@ describe("read tool notebook cells", () => {
 		await expect(tool.execute("mixed", { path: "book.ipynb", cells: "1", pages: "1" })).rejects.toThrow(
 			"cannot be combined",
 		);
-		await expect(tool.execute("outputs", { path: "book.ipynb", includeOutputs: false })).rejects.toThrow(
+		await expect(tool.execute("outputs", { path: "book.ipynb", includeOutputs: true })).rejects.toThrow(
 			"requires a notebook cells selection",
 		);
 	});
