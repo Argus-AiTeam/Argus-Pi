@@ -2,7 +2,7 @@
 
 Open downstream issues and pull requests in
 [Argus-AiTeam/Argus-Pi](https://github.com/Argus-AiTeam/Argus-Pi), targeting the
-`argus` branch. Upstream's contributor approval gates do not run in this fork.
+`main` branch. Upstream's contributor approval gates do not run in this fork.
 Keep changes in the Pi layer, reproduce the problem, and include focused tests.
 Report quality and failure rates alongside any token or latency improvements.
 

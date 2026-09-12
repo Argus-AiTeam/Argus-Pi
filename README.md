@@ -69,7 +69,7 @@ Installing `@earendil-works/pi-coding-agent` from npm installs upstream Pi,
 not this fork.
 
 ```bash
-git clone --branch argus https://github.com/Argus-AiTeam/Argus-Pi.git
+git clone --branch main https://github.com/Argus-AiTeam/Argus-Pi.git
 cd Argus-Pi
 npm ci --ignore-scripts
 npm run hydrate:model-data
@@ -90,9 +90,9 @@ publication identity and release process are established.
 
 ## Ongoing development
 
-The downstream default branch is `argus`; `main` initially retains the forked
-upstream history. Add `https://github.com/earendil-works/pi.git` as the `upstream`
-remote and merge reviewed upstream changes into `argus` in explicit updates.
+The downstream default and development branch is `main`. Add
+`https://github.com/earendil-works/pi.git` as the `upstream` remote and merge
+reviewed upstream changes into `main` in explicit updates.
 Do not force-reset the downstream branch to upstream.
 
 Prioritize reproduced request failures and incomplete handoffs, then measured
@@ -101,7 +101,7 @@ semantics. Each change needs a focused regression check and, for performance
 claims, same-model/same-budget task comparisons including failure counts.
 Do not commit credentials, private task logs, or provider authorization data.
 
-CI also targets `argus`. Upstream contributor gates and release/catalog
+CI targets `main`. Upstream contributor gates and release/catalog
 publication jobs are restricted to the upstream repository; this fork does not
 publish to upstream npm namespaces or infrastructure.
 
@@ -120,7 +120,7 @@ The original packages, documentation and MIT attribution are retained below.
 </p>
 
 > The contributor approval policy below belongs to upstream Pi. Argus-Pi
-> contributions target the `argus` branch; see [CONTRIBUTING.md](CONTRIBUTING.md).
+> contributions target the `main` branch; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 # Pi Agent Harness
 
