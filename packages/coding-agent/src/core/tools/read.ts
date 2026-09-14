@@ -151,6 +151,14 @@ export function createReadToolDefinition(
 			_onUpdate?,
 			ctx?: ExtensionContext,
 		) {
+			// Structured callers can populate both mutually exclusive selectors
+			// with empty defaults. That packet selects neither format. A single
+			// explicit empty selector still receives its usual validation error.
+			if (pages !== undefined && cells !== undefined && !pages.trim() && !cells.trim()) {
+				pages = undefined;
+				cells = undefined;
+				if (includeOutputs === false) includeOutputs = undefined;
+			}
 			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
 				(resolve, reject) => {
 					if (signal?.aborted) {
