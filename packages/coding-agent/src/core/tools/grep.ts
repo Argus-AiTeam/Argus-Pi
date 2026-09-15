@@ -8,6 +8,7 @@ import { ensureTool } from "../../utils/tools-manager.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { grepRenderers } from "./renderers/grep.ts";
+import { SearchErrors } from "./search-errors.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import {
 	DEFAULT_MAX_BYTES,
@@ -167,7 +168,7 @@ export function createGrepToolDefinition(
 
 						const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 						const rl = createInterface({ input: child.stdout });
-						let stderr = "";
+						const stderr = new SearchErrors();
 						let matchCount = 0;
 						let matchLimitReached = false;
 						let linesTruncated = false;
@@ -191,7 +192,7 @@ export function createGrepToolDefinition(
 						};
 						signal?.addEventListener("abort", onAbort, { once: true });
 						child.stderr?.on("data", (chunk) => {
-							stderr += chunk.toString();
+							stderr.append(chunk);
 						});
 
 						const formatBlock = async (filePath: string, lineNumber: number): Promise<string[]> => {
@@ -249,7 +250,7 @@ export function createGrepToolDefinition(
 								return;
 							}
 							if (!killedDueToLimit && code !== 0 && code !== 1) {
-								const errorMsg = stderr.trim() || `ripgrep exited with code ${code}`;
+								const errorMsg = stderr.message(`ripgrep exited with code ${code}`);
 								settle(() => reject(new Error(errorMsg)));
 								return;
 							}

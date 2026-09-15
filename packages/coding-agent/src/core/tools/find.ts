@@ -7,6 +7,7 @@ import { ensureTool } from "../../utils/tools-manager.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import { pathExists, resolveToCwd } from "./path-utils.ts";
 import { findRenderers } from "./renderers/find.ts";
+import { SearchErrors } from "./search-errors.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 
@@ -215,7 +216,7 @@ export function createFindToolDefinition(
 
 						const child = spawn(fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 						const rl = createInterface({ input: child.stdout });
-						let stderr = "";
+						const stderr = new SearchErrors();
 						const lines: string[] = [];
 
 						stopChild = () => {
@@ -229,7 +230,7 @@ export function createFindToolDefinition(
 						};
 
 						child.stderr?.on("data", (chunk) => {
-							stderr += chunk.toString();
+							stderr.append(chunk);
 						});
 
 						rl.on("line", (line) => {
@@ -249,7 +250,7 @@ export function createFindToolDefinition(
 							}
 							const output = lines.join("\n");
 							if (code !== 0) {
-								const errorMsg = stderr.trim() || `fd exited with code ${code}`;
+								const errorMsg = stderr.message(`fd exited with code ${code}`);
 								if (!output) {
 									settle(() => reject(new Error(errorMsg)));
 									return;
